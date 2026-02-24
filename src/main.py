@@ -1,33 +1,71 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
+
+from src.scoring import classify_score, compute_score
 
 PROJECT = "scrape-anywhere"
 DOMAIN = "application"
+GOAL = "core runtime signals to support reliable product operations"
 
 
 @dataclass
 class Assessment:
     project: str
     domain: str
+    goal: str
     score: float
     status: str
-    reason: str
+    reasons: list[str]
+    recommendations: list[str]
     timestamp: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project": self.project,
+            "domain": self.domain,
+            "goal": self.goal,
+            "score": self.score,
+            "status": self.status,
+            "reasons": self.reasons,
+            "recommendations": self.recommendations,
+            "timestamp": self.timestamp,
+        }
+
+
+def recommendations_for(status: str) -> list[str]:
+    if status == "critical":
+        return ["page-oncall", "open-incident", "contain-impact"]
+    if status == "high":
+        return ["create-ticket", "assign-owner", "increase-observability"]
+    if status == "medium":
+        return ["queue-review", "collect-context"]
+    return ["record-signal"]
 
 
 def assess(signal: str) -> Assessment:
-    text = signal.lower()
-    weight = 0.1
-    if any(k in text for k in ["critical", "breach", "outage", "failure", "incident"]):
-        weight += 0.6
-    if any(k in text for k in ["warning", "anomaly", "retry", "latency"]):
-        weight += 0.2
-    score = min(weight, 1.0)
-    status = "high" if score >= 0.7 else "medium" if score >= 0.4 else "low"
-    reason = "Context-aware baseline model for core runtime signals to support reliable product operations."
-    return Assessment(PROJECT, DOMAIN, score, status, reason, datetime.now(timezone.utc).isoformat())
+    score, reasons = compute_score(signal)
+    status = classify_score(score)
+    return Assessment(
+        project=PROJECT,
+        domain=DOMAIN,
+        goal=GOAL,
+        score=score,
+        status=status,
+        reasons=reasons,
+        recommendations=recommendations_for(status),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def summarize(signal: str) -> str:
+    result = assess(signal)
+    return (
+        f"{result.project} [{result.domain}] "
+        f"status={result.status} score={result.score:.2f} "
+        f"reasons={','.join(result.reasons)}"
+    )
 
 
 if __name__ == "__main__":
-    result = assess("baseline health check")
-    print(f"{result.project}:{result.domain}:{result.status}:{result.score}")
+    print(summarize("baseline health check with warning latency"))
